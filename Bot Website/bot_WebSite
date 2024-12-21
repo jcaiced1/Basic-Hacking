@@ -1,0 +1,441 @@
+import time
+import random
+from selenium import webdriver
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver import ActionChains
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.firefox.options import Options
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
+from bs4 import BeautifulSoup
+import undetected_chromedriver as uc
+import pyautogui
+import requests
+import pytz
+from datetime import datetime, timedelta
+from stem import Signal
+from stem.control import Controller
+from fake_useragent import UserAgent
+
+
+def switch_tor_ip():
+    with Controller.from_port(port=9051) as controller:
+        controller.authenticate(password='XXXXXXXX')  # Set your password here
+        controller.signal(Signal.NEWNYM)
+        print("Switched Tor IP")
+        new_ip = get_current_ip()
+        if new_ip:
+            print(f"New IP after Tor switch: {new_ip}")
+        else:
+            print("Failed to retrieve new IP after Tor switch.")
+
+
+# Function to get the current local time in the specified timezone
+def get_local_time(timezone):
+    try:
+        tz = pytz.timezone(timezone)
+        local_time = datetime.now(tz)
+        formatted_time = local_time.strftime('%I:%M %p')  # 12-hour format (e.g., 02:30 PM)
+        return formatted_time
+    except Exception as e:
+        print(f"Error getting local time for timezone {timezone}: {e}")
+        return None
+
+# Function to get current IP using Tor proxy
+def get_current_ip():
+    try:
+        # Always use Tor proxy
+        proxies = {
+            'http': 'socks5h://127.0.0.1:9050',
+            'https': 'socks5h://127.0.0.1:9050'
+        }
+        response = requests.get("http://icanhazip.com", proxies=proxies)
+        return response.text.strip()
+    except Exception as e:
+        print(f"Error getting current IP: {e}")
+        return None
+
+
+def get_location(ip):
+    try:
+        # Always use the Tor proxy
+        proxies = {
+            'http': 'socks5h://127.0.0.1:9050',
+            'https': 'socks5h://127.0.0.1:9050'
+        }
+
+        # Fetch the geolocation using the IP through the Tor proxy
+        response = requests.get(f"http://ip-api.com/json/{ip}", proxies=proxies, timeout=10)
+
+        content_type = response.headers.get('Content-Type', '').lower()
+        if 'application/json' in content_type:
+            data = response.json()
+            if data['status'] == 'success':
+                return data['country'], data['regionName'], data['city'], data['timezone']
+            else:
+                print(f"Location fetch failed for IP: {ip}. Response: {data}")
+        else:
+            print(f"Unexpected content-type: {content_type}")
+            print(f"Response body: {response.text}")
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"Error getting location: {e}")
+        return None
+
+
+# Function to check if the current time is within waking hours
+def is_waking_time(timezone):
+    try:
+        tz = pytz.timezone(timezone)
+        current_time = datetime.now(tz)
+        current_hour = current_time.hour
+        current_minute = current_time.minute
+        current_weekday = current_time.weekday()
+
+        # Weekdays (Monday to Friday)
+        if current_weekday < 5:
+            if (current_hour > 6 or (current_hour == 6 and current_minute >= 30)) and current_hour < 22:
+                return True
+        # Weekends (Saturday and Sunday)
+        else:
+            if (current_hour > 7 or (current_hour == 7 and current_minute >= 30)) and current_hour < 22:
+                return True
+        return False
+    except Exception as e:
+        print(f"Error determining waking time for timezone {timezone}: {e}")
+        return False
+
+
+# Set up random user agent percentages
+user_agents = {
+    "chrome_desktop": 0.20,  # Adjust desktop Chrome to reflect lower share
+    "safari_desktop": 0.10,
+    "firefox_desktop": 0.08,
+    "edge_desktop": 0.05,
+    "chrome_mobile": 0.35,  # Increase mobile Chrome usage
+    "safari_mobile": 0.17,
+    "internet_explorer": 0.05  # Keep IE share low due to its decline
+}
+
+
+# Randomize the user agent based on real-world percentages and indicate if it's mobile
+def get_random_user_agent():
+    ua = UserAgent()
+    browsers = list(user_agents.keys())
+    weights = list(user_agents.values())
+    selected_browser = random.choices(browsers, weights=weights)[0]
+    
+    if "mobile" in selected_browser:
+        device_type = "Mobile"
+    else:
+        device_type = "Desktop"
+
+    if selected_browser == "internet_explorer":
+        try:
+            user_agent = ua.ie
+        except Exception as e:
+            print(f"Error occurred during getting Internet Explorer user agent: {e}. Using fallback.")
+            user_agent = random.choice(internet_explorer_user_agents)
+    else:
+        user_agent = getattr(ua, selected_browser.replace("_desktop", "").replace("_mobile", ""))
+    
+    print(f"Using {device_type} User-Agent: {user_agent}")
+    return user_agent, device_type
+
+
+# Define a list of common Internet Explorer user agents
+internet_explorer_user_agents = [
+    "Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; Trident/6.0)",
+    "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)",
+    "Mozilla/5.0 (compatible; MSIE 8.0; Windows NT 6.0; Trident/4.0)",
+    "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)"
+]
+
+
+# Main function to visit the website and interact with a random badge or social icon
+def visit_website(driver):
+    driver.get('http://www.mywebsite.com') # add a website
+
+    # Simulate human-like scrolling and reading
+    scroll_pause_time = random.uniform(2, 5)
+    scroll_height = driver.execute_script("return document.body.scrollHeight")
+    for i in range(1, scroll_height, random.randint(100, 300)):
+        driver.execute_script(f"window.scrollTo(0, {i});")
+        time.sleep(scroll_pause_time)
+
+    # Define a list of clickable elements with their CSS selectors
+    clickable_elements = {
+        "tryhackme-badge": ".tryhackme-badge",
+        "social-icon github": ".social-icon.github",  # CSS selector for GitHub icon
+        "social-icon linkedin": ".social-icon.linkedin"  # CSS selector for LinkedIn icon
+    }
+
+    # Randomly select one of the elements
+    selected_element = random.choice(list(clickable_elements.keys()))
+    print(f"Selected element: {selected_element}")
+
+    # Simulate random mouse movements before interacting
+    action = ActionChains(driver)
+    action.move_by_offset(random.randint(50, 200), random.randint(50, 200)).perform()
+    time.sleep(random.uniform(1, 3))  # Random pause after mouse movement
+
+    # Wait for the element to be present before hovering and clicking
+    try:
+        element = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, clickable_elements[selected_element]))
+        )
+        # Hover over the element to simulate a more human-like interaction
+        action.move_to_element(element).perform()
+        time.sleep(random.uniform(1, 3))  # Pause before clicking
+
+        # Click the element
+        element.click()
+        print(f"{selected_element} clicked successfully.")
+
+        # Wait after clicking the element to let the website load fully
+        time.sleep(random.uniform(5, 10))  # Wait for 5 to 10 seconds
+
+        # Scroll the new page after clicking the element
+        new_scroll_pause_time = random.uniform(2, 5)
+        new_scroll_height = driver.execute_script("return document.body.scrollHeight")
+        for i in range(1, new_scroll_height, random.randint(100, 300)):
+            driver.execute_script(f"window.scrollTo(0, {i});")
+            time.sleep(new_scroll_pause_time)
+
+        # Perform a random key press to simulate typing or pressing a button
+        body = driver.find_element(By.TAG_NAME, "body")
+        body.send_keys(random.choice([Keys.ARROW_DOWN, Keys.ARROW_UP, Keys.ESCAPE]))  # Simulating keyboard actions
+
+    except Exception as e:
+        print(f"Failed to find or click the element ({selected_element}): {e}")
+
+
+# Randomize the screen resolution based on whether the device is mobile or desktop
+def get_random_screen_resolution(device_type):
+    if device_type == "Mobile":
+        # Common mobile resolutions
+        resolutions = [
+            (360, 640),  # Samsung Galaxy S5
+            (375, 667),  # iPhone 6/7/8
+            (414, 736),  # iPhone 6/7/8 Plus
+            (375, 812),  # iPhone X/XS/11 Pro
+            (412, 869),  # Pixel 4 XL
+        ]
+    else:
+        # Common desktop resolutions
+        resolutions = [
+            (1920, 1080), (1366, 768), (1440, 900),
+            (1600, 900), (1536, 864), (1280, 720),
+            (1024, 768), (1280, 800)
+        ]
+    
+    return random.choice(resolutions)
+
+# Function to create a Chrome driver with advanced fingerprint randomization
+from selenium import webdriver
+from selenium.webdriver.firefox.options import Options
+from selenium.common.exceptions import TimeoutException
+import time
+import random
+
+def create_driver_with_tor(retries=3):
+    for attempt in range(retries):
+        try:
+            # Create a Firefox profile that routes traffic through the Tor proxy (Socks5)
+            firefox_profile = webdriver.FirefoxProfile()
+
+            # Set up the proxy server to route traffic through Tor (Socks5)
+            firefox_profile.set_preference("network.proxy.type", 1)  # Manual proxy configuration
+            firefox_profile.set_preference("network.proxy.socks", "127.0.0.1")
+            firefox_profile.set_preference("network.proxy.socks_port", 9050)
+            firefox_profile.set_preference("network.proxy.socks_version", 5)
+
+            # Disable DNS through the proxy (use Tor's DNS)
+            firefox_profile.set_preference("network.proxy.socks_remote_dns", True)
+
+            # Disable WebRTC to prevent IP leaks
+            firefox_profile.set_preference("media.peerconnection.enabled", False)
+
+            # Set random user agent and window size
+            options = Options()
+            user_agent, device_type = get_random_user_agent()
+            options.set_preference("general.useragent.override", user_agent)
+            width, height = get_random_screen_resolution(device_type)
+            options.add_argument(f"--window-size={width},{height}")
+
+            # Add the profile to the options
+            options.profile = firefox_profile  # This is the correct way to add the profile
+
+            # Start Firefox with the configured options
+            driver = webdriver.Firefox(options=options)
+
+            # Clear cookies at the start of the session
+            driver.delete_all_cookies()
+
+            print(f"Using Screen Resolution: {width}x{height}")
+            print("Cookies cleared and Tor proxy is set.")
+            return driver
+        except TimeoutException as e:
+            print(f"Attempt {attempt + 1}/{retries}: Failed to start Firefox. Retrying...")
+            time.sleep(5)  # Wait before retrying
+    raise TimeoutException("Failed to start Firefox after multiple attempts.")
+
+# Simulate more human-like mouse movements
+def simulate_human_mouse_movement():
+    # Move the mouse to a random position on the screen with a smooth duration
+    x, y = pyautogui.size()
+    random_x = random.randint(0, x)
+    random_y = random.randint(0, y)
+    pyautogui.moveTo(random_x, random_y, duration=random.uniform(0.5, 2.5))  # Random duration for movement
+    print(f"Moved mouse to ({random_x}, {random_y})")
+
+# Simulate typing random keys or simple interaction
+def simulate_human_typing():
+    pyautogui.typewrite(random.choice(["Hello", "Testing", "Typing"]), interval=random.uniform(0.1, 0.5))  # Simulate typing speed
+    pyautogui.press(random.choice(["enter", "space"]))  # Simulate pressing a random key
+    print("Simulated typing interaction")
+
+
+# Simulate human-like session by randomizing interactions and timing
+def visit_website_with_randomized_session(driver):
+    driver.get('http://www.mywebsite.com')  # add website
+    
+    # 50% chance to bounce (leave after loading the first page)
+    should_bounce = random.choice([True, False])
+    
+    if should_bounce:
+        # Simulate a bounce by just loading the page and staying for a short time
+        print("Simulating bounce (no further interaction).")
+        
+        # Randomly stay on the page for 3 to 10 seconds before leaving
+        bounce_wait_time = random.uniform(3, 10)
+        time.sleep(bounce_wait_time)
+        print(f"Stayed on page for {bounce_wait_time:.2f} seconds before bouncing.")
+        
+        return  # Exit the function to simulate leaving the site
+    
+    # If not bouncing, proceed with interacting on the site
+    print("Proceeding with full session (not a bounce).")
+
+    # Simulate human-like scrolling and reading
+    scroll_pause_time = random.uniform(2, 5)
+    scroll_height = driver.execute_script("return document.body.scrollHeight")
+    
+    # Randomize scrolling depth
+    for i in range(1, scroll_height, random.randint(100, 300)):
+        driver.execute_script(f"window.scrollTo(0, {i});")
+        time.sleep(scroll_pause_time)
+        simulate_human_mouse_movement()  # Simulate mouse movement during scroll
+    
+    # Randomly interact with an element on the page
+    clickable_elements = {
+        "tryhackme-badge": ".tryhackme-badge",
+        "social-icon github": ".social-icon.github",
+        "social-icon linkedin": ".social-icon.linkedin"
+    }
+    
+    selected_element = random.choice(list(clickable_elements.keys()))
+    print(f"Selected element: {selected_element}")
+    
+    try:
+        element = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, clickable_elements[selected_element]))
+        )
+        pyautogui.moveTo(element.location['x'], element.location['y'], duration=random.uniform(0.5, 2))
+        element.click()
+        print(f"Clicked element: {selected_element}")
+    except Exception as e:
+        print(f"Failed to click the element: {e}")
+
+    # Simulate typing interaction
+    simulate_human_typing()
+
+    # Wait for a random time before closing the browser
+    wait_time = random.uniform(5, 15)
+    print(f"Waiting for {wait_time:.2f} seconds before ending session.")
+    time.sleep(wait_time)
+
+
+def fetch_with_retries(func, retries=3, backoff_factor=1.5):
+    """
+    Executes a function and retries it up to a number of times if it fails.
+    Parameters:
+        func (function): The function to execute.
+        retries (int): Number of retry attempts.
+        backoff_factor (float): Factor by which to increase the wait time after each retry.
+    Returns:
+        The result of the function if successful, or None if all retries fail.
+    """
+    attempt = 0
+    while attempt < retries:
+        try:
+            return func()  # Try to execute the function
+        except Exception as e:
+            attempt += 1
+            wait_time = backoff_factor ** attempt  # Exponential backoff
+            print(f"Error: {e}. Retrying in {wait_time:.2f} seconds...")
+            time.sleep(wait_time)
+    print(f"Failed after {retries} attempts.")
+    return None
+
+
+# Function to run visits only during waking hours
+def main():
+    while True:
+        # Randomly decide how many visits will happen this hour (between 2 and 6)
+        visits_this_hour = random.randint(2, 6)
+        print(f"Planned visits for this hour: {visits_this_hour}")
+
+        total_time_available = 3600  # Total seconds in an hour
+        time_for_visits = total_time_available / visits_this_hour  # Time available for each visit
+
+        for visit in range(visits_this_hour):
+            # Switch to a new Tor IP
+            switch_tor_ip()
+
+            # Get current IP using Tor
+            ip = get_current_ip()
+            if ip:
+                print(f"Current IP: {ip}")
+
+                location_info = fetch_with_retries(lambda: get_location(ip))
+                if location_info is None:
+                    print("Failed to get location. Switching to a new IP after a short delay...")
+                    time.sleep(random.uniform(5, 10))
+                    continue
+
+                country, region, city, timezone = location_info
+                local_time = get_local_time(timezone)
+                print(f"IP Location: {country}, {region}, {city}, Timezone: {timezone}, Local Time: {local_time}")
+
+                # Use the timezone to check if it's waking time
+                if not is_waking_time(timezone):
+                    print(f"It's not waking time in this location ({local_time}). Switching to a new IP after a short delay...")
+                    time.sleep(random.uniform(5, 10))
+                    continue
+
+                # Step 1: Create the driver using Tor and visit the website
+                driver = create_driver_with_tor()
+
+                # Step 2: Visit mywebsite.com directly
+                visit_website(driver)
+
+                driver.quit()  # Close the browser after the visit
+
+                # Calculate the delay based on the total available time for each visit
+                # Add a slight random variation to the delay (e.g., +/- 2 minutes)
+                delay = time_for_visits + random.uniform(-120, 120)  # Between -2 to +2 minutes variation
+                print(f"Waiting for {delay / 60:.2f} minutes before the next visit.")
+                time.sleep(delay)
+            else:
+                print("Failed to get IP. Switching to a new IP after a short delay...")
+                time.sleep(random.uniform(5, 10))
+                continue
+
+        print(f"Completed all {visits_this_hour} visits for this hour.")
+
+if __name__ == "__main__":
+    main()
